@@ -18,7 +18,7 @@ import {
   Action,
   ObjectType,
 } from "../../../data/constants";
-import { useTables, useUndoRedo } from "../../../hooks";
+import { useDiagram, useUndoRedo } from "../../../hooks";
 import i18n from "../../../i18n/i18n";
 import { useTranslation } from "react-i18next";
 
@@ -35,7 +35,7 @@ const columns = [
 
 export default function RelationshipInfo({ data }) {
   const { setUndoStack, setRedoStack } = useUndoRedo();
-  const { tables, setRelationships, deleteRelationship } = useTables();
+  const { tables, setRelationships, deleteRelationship } = useDiagram();
   const { t } = useTranslation();
 
   const swapKeys = () => {
@@ -107,17 +107,6 @@ export default function RelationshipInfo({ data }) {
 
   const changeConstraint = (key, value) => {
     const undoKey = `${key}Constraint`;
-    console.log({
-      action: Action.EDIT,
-      element: ObjectType.RELATIONSHIP,
-      rid: data.id,
-      undo: { [undoKey]: data[undoKey] },
-      redo: { [undoKey]: value },
-      message: t("edit_relationship", {
-        refName: data.name,
-        extra: "[constraint]",
-      }),
-    });
     setUndoStack((prev) => [
       ...prev,
       {

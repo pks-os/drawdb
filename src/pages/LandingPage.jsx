@@ -197,7 +197,7 @@ export default function LandingPage() {
           />
           <img
             src={sql_server_icon}
-            className="opacity-70 hover:opacity-100 transition-all duration-300 h-24"
+            className="opacity-70 hover:opacity-100 transition-all duration-300 h-16"
           />
         </div>
         <div className="mt-16 mb-2 text-2xl font-bold text-center">
@@ -290,11 +290,11 @@ const features = [
     title: "Import",
     content: (
       <div>
-        Already have a diagram? Import a DDL script*, or a JSON file to generate
+        Already have a diagram? Import a DDL script, or a JSON file to generate
         or a diagram.
       </div>
     ),
-    footer: "*Only MySQL supported, more coming soon.",
+    footer: "",
   },
   {
     title: "Customizable workspace",

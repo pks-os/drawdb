@@ -9,15 +9,16 @@ import {
 } from "@douyinfe/semi-ui";
 import { Action, ObjectType } from "../../../data/constants";
 import { IconDeleteStroked } from "@douyinfe/semi-icons";
-import { hasCheck, hasPrecision, isSized } from "../../../utils/toSQL";
-import { useTables, useUndoRedo } from "../../../hooks";
+import { useDiagram, useUndoRedo } from "../../../hooks";
 import { useTranslation } from "react-i18next";
+import { dbToTypes } from "../../../data/datatypes";
+import { databases } from "../../../data/databases";
 
 export default function FieldDetails({ data, tid, index }) {
   const { t } = useTranslation();
-  const { tables } = useTables();
+  const { tables, database } = useDiagram();
   const { setUndoStack, setRedoStack } = useUndoRedo();
-  const { updateField, deleteField } = useTables();
+  const { updateField, deleteField } = useDiagram();
   const [editField, setEditField] = useState({});
 
   return (
@@ -27,13 +28,7 @@ export default function FieldDetails({ data, tid, index }) {
         className="my-2"
         placeholder={t("default_value")}
         value={data.default}
-        disabled={
-          data.type === "BLOB" ||
-          data.type === "JSON" ||
-          data.type === "TEXT" ||
-          data.type === "UUID" ||
-          data.increment
-        }
+        disabled={dbToTypes[database][data.type].noDefault || data.increment}
         onChange={(value) => updateField(tid, index, { default: value })}
         onFocus={(e) => setEditField({ default: e.target.value })}
         onBlur={(e) => {
@@ -99,12 +94,12 @@ export default function FieldDetails({ data, tid, index }) {
           />
         </>
       )}
-      {isSized(data.type) && (
+      {dbToTypes[database][data.type].isSized && (
         <>
           <div className="font-semibold">{t("size")}</div>
           <InputNumber
             className="my-2 w-full"
-            placeholder="Set length"
+            placeholder={t("size")}
             value={data.size}
             onChange={(value) => updateField(tid, index, { size: value })}
             onFocus={(e) => setEditField({ size: e.target.value })}
@@ -131,7 +126,7 @@ export default function FieldDetails({ data, tid, index }) {
           />
         </>
       )}
-      {hasPrecision(data.type) && (
+      {dbToTypes[database][data.type].hasPrecision && (
         <>
           <div className="font-semibold">{t("precision")}</div>
           <Input
@@ -168,7 +163,7 @@ export default function FieldDetails({ data, tid, index }) {
           />
         </>
       )}
-      {hasCheck(data.type) && (
+      {dbToTypes[database][data.type].hasCheck && (
         <>
           <div className="font-semibold">{t("check")}</div>
           <Input
@@ -237,11 +232,7 @@ export default function FieldDetails({ data, tid, index }) {
           value="increment"
           checked={data.increment}
           disabled={
-            !(
-              data.type === "INT" ||
-              data.type === "BIGINT" ||
-              data.type === "SMALLINT"
-            )
+            !dbToTypes[database][data.type].canIncrement || data.isArray
           }
           onChange={(checkedValues) => {
             setUndoStack((prev) => [
@@ -272,6 +263,42 @@ export default function FieldDetails({ data, tid, index }) {
           }}
         />
       </div>
+      {databases[database].hasArrays && (
+        <div className="flex justify-between items-center my-3">
+          <div className="font-medium">{t("declare_array")}</div>
+          <Checkbox
+            value="isArray"
+            checked={data.isArray}
+            onChange={(checkedValues) => {
+              setUndoStack((prev) => [
+                ...prev,
+                {
+                  action: Action.EDIT,
+                  element: ObjectType.TABLE,
+                  component: "field",
+                  tid: tid,
+                  fid: index,
+                  undo: {
+                    [checkedValues.target.value]: !checkedValues.target.checked,
+                  },
+                  redo: {
+                    [checkedValues.target.value]: checkedValues.target.checked,
+                  },
+                  message: t("edit_table", {
+                    tableName: tables[tid].name,
+                    extra: "[field]",
+                  }),
+                },
+              ]);
+              setRedoStack([]);
+              updateField(tid, index, {
+                isArray: checkedValues.target.checked,
+                increment: data.isArray ? data.increment : false,
+              });
+            }}
+          />
+        </div>
+      )}
       <div className="font-semibold">{t("comment")}</div>
       <TextArea
         className="my-2"

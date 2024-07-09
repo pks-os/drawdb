@@ -2,6 +2,7 @@ import { db } from "../../../data/db";
 import { Banner } from "@douyinfe/semi-ui";
 import { useLiveQuery } from "dexie-react-hooks";
 import { useTranslation } from "react-i18next";
+import { databases } from "../../../data/databases";
 
 export default function Open({ selectedDiagramId, setSelectedDiagramId }) {
   const diagrams = useLiveQuery(() => db.diagrams.toArray());
@@ -37,6 +38,7 @@ export default function Open({ selectedDiagramId, setSelectedDiagramId }) {
                 <th>{t("name")}</th>
                 <th>{t("last_modified")}</th>
                 <th>{t("size")}</th>
+                <th>{t("type")}</th>
               </tr>
             </thead>
             <tbody>
@@ -63,6 +65,9 @@ export default function Open({ selectedDiagramId, setSelectedDiagramId }) {
                         d.lastModified.toLocaleTimeString()}
                     </td>
                     <td className="py-1">{getDiagramSize(d)}</td>
+                    <td className="py-1">
+                      {databases[d.database].name ?? "Generic"}
+                    </td>
                   </tr>
                 );
               })}

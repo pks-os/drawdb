@@ -2,21 +2,25 @@ import { useState, useEffect, useCallback } from "react";
 import ControlPanel from "./EditorHeader/ControlPanel";
 import Canvas from "./EditorCanvas/Canvas";
 import SidePanel from "./EditorSidePanel/SidePanel";
-import { State } from "../data/constants";
+import { DB, State } from "../data/constants";
 import { db } from "../data/db";
 import {
   useLayout,
   useSettings,
   useTransform,
-  useTables,
+  useDiagram,
   useUndoRedo,
   useAreas,
   useNotes,
   useTypes,
   useTasks,
   useSaveState,
+  useEnums,
 } from "../hooks";
 import FloatingControls from "./FloatingControls";
+import { Modal } from "@douyinfe/semi-ui";
+import { useTranslation } from "react-i18next";
+import { databases } from "../data/databases";
 
 export default function WorkSpace() {
   const [id, setId] = useState(0);
@@ -24,6 +28,8 @@ export default function WorkSpace() {
   const [resize, setResize] = useState(false);
   const [width, setWidth] = useState(340);
   const [lastSaved, setLastSaved] = useState("");
+  const [showSelectDbModal, setShowSelectDbModal] = useState(false);
+  const [selectedDb, setSelectedDb] = useState("");
   const { layout } = useLayout();
   const { settings } = useSettings();
   const { types, setTypes } = useTypes();
@@ -32,8 +38,17 @@ export default function WorkSpace() {
   const { notes, setNotes } = useNotes();
   const { saveState, setSaveState } = useSaveState();
   const { transform, setTransform } = useTransform();
-  const { tables, relationships, setTables, setRelationships } = useTables();
+  const { enums, setEnums } = useEnums();
+  const {
+    tables,
+    relationships,
+    setTables,
+    setRelationships,
+    database,
+    setDatabase,
+  } = useDiagram();
   const { undoStack, redoStack, setUndoStack, setRedoStack } = useUndoRedo();
+  const { t } = useTranslation();
 
   const handleResize = (e) => {
     if (!resize) return;
@@ -53,16 +68,18 @@ export default function WorkSpace() {
       ) {
         await db.diagrams
           .add({
+            database: database,
             name: title,
             lastModified: new Date(),
             tables: tables,
             references: relationships,
-            types: types,
             notes: notes,
             areas: areas,
             todos: tasks,
             pan: transform.pan,
             zoom: transform.zoom,
+            ...(databases[database].hasEnums && { enums: enums }),
+            ...(databases[database].hasTypes && { types: types }),
           })
           .then((id) => {
             setId(id);
@@ -73,16 +90,18 @@ export default function WorkSpace() {
       } else {
         await db.diagrams
           .update(id, {
+            database: database,
             name: title,
             lastModified: new Date(),
             tables: tables,
             references: relationships,
-            types: types,
             notes: notes,
             areas: areas,
             todos: tasks,
             pan: transform.pan,
             zoom: transform.zoom,
+            ...(databases[database].hasEnums && { enums: enums }),
+            ...(databases[database].hasTypes && { types: types }),
           })
           .then(() => {
             setSaveState(State.SAVED);
@@ -92,15 +111,17 @@ export default function WorkSpace() {
     } else {
       await db.templates
         .update(id, {
+          database: database,
           title: title,
           tables: tables,
           relationships: relationships,
-          types: types,
           notes: notes,
           subjectAreas: areas,
           todos: tasks,
           pan: transform.pan,
           zoom: transform.zoom,
+          ...(databases[database].hasEnums && { enums: enums }),
+          ...(databases[database].hasTypes && { types: types }),
         })
         .then(() => {
           setSaveState(State.SAVED);
@@ -121,6 +142,8 @@ export default function WorkSpace() {
     tasks,
     transform,
     setSaveState,
+    database,
+    enums,
   ]);
 
   const load = useCallback(async () => {
@@ -130,18 +153,29 @@ export default function WorkSpace() {
         .last()
         .then((d) => {
           if (d) {
+            if (d.database) {
+              setDatabase(d.database);
+            } else {
+              setDatabase(DB.GENERIC);
+            }
             setId(d.id);
             setTitle(d.name);
             setTables(d.tables);
             setRelationships(d.references);
             setNotes(d.notes);
             setAreas(d.areas);
-            setTypes(d.types);
             setTasks(d.todos ?? []);
             setTransform({ pan: d.pan, zoom: d.zoom });
+            if (databases[database].hasTypes) {
+              setTypes(d.types ?? []);
+            }
+            if (databases[database].hasEnums) {
+              setEnums(d.enums ?? []);
+            }
             window.name = `d ${d.id}`;
           } else {
             window.name = "";
+            if (selectedDb === "") setShowSelectDbModal(true);
           }
         })
         .catch((error) => {
@@ -154,10 +188,14 @@ export default function WorkSpace() {
         .get(id)
         .then((diagram) => {
           if (diagram) {
+            if (diagram.database) {
+              setDatabase(diagram.database);
+            } else {
+              setDatabase(DB.GENERIC);
+            }
             setId(diagram.id);
             setTitle(diagram.name);
             setTables(diagram.tables);
-            setTypes(diagram.types);
             setRelationships(diagram.references);
             setAreas(diagram.areas);
             setNotes(diagram.notes);
@@ -168,6 +206,12 @@ export default function WorkSpace() {
             });
             setUndoStack([]);
             setRedoStack([]);
+            if (databases[database].hasTypes) {
+              setTypes(diagram.types ?? []);
+            }
+            if (databases[database].hasEnums) {
+              setEnums(diagram.enums ?? []);
+            }
             window.name = `d ${diagram.id}`;
           } else {
             window.name = "";
@@ -183,10 +227,14 @@ export default function WorkSpace() {
         .get(id)
         .then((diagram) => {
           if (diagram) {
+            if (diagram.database) {
+              setDatabase(diagram.database);
+            } else {
+              setDatabase(DB.GENERIC);
+            }
             setId(diagram.id);
             setTitle(diagram.title);
             setTables(diagram.tables);
-            setTypes(diagram.types);
             setRelationships(diagram.relationships);
             setAreas(diagram.subjectAreas);
             setTasks(diagram.todos ?? []);
@@ -197,10 +245,19 @@ export default function WorkSpace() {
             });
             setUndoStack([]);
             setRedoStack([]);
+            if (databases[database].hasTypes) {
+              setTypes(diagram.types ?? []);
+            }
+            if (databases[database].hasEnums) {
+              setEnums(diagram.enums ?? []);
+            }
+          } else {
+            if (selectedDb === "") setShowSelectDbModal(true);
           }
         })
         .catch((error) => {
           console.log(error);
+          if (selectedDb === "") setShowSelectDbModal(true);
         });
     };
 
@@ -234,6 +291,10 @@ export default function WorkSpace() {
     setNotes,
     setTypes,
     setTasks,
+    setDatabase,
+    database,
+    setEnums,
+    selectedDb,
   ]);
 
   useEffect(() => {
@@ -304,6 +365,48 @@ export default function WorkSpace() {
           )}
         </div>
       </div>
+      <Modal
+        centered
+        size="medium"
+        closable={false}
+        hasCancel={false}
+        title={t("pick_db")}
+        okText={t("confirm")}
+        visible={showSelectDbModal}
+        onOk={() => {
+          if (selectedDb === "") return;
+          setDatabase(selectedDb);
+          setShowSelectDbModal(false);
+        }}
+        okButtonProps={{ disabled: selectedDb === "" }}
+      >
+        <div className="grid grid-cols-3 gap-4 place-content-center">
+          {Object.values(databases).map((x) => (
+            <div
+              key={x.name}
+              onClick={() => setSelectedDb(x.label)}
+              className={`space-y-3 py-3 px-4 rounded-md border-2 select-none ${
+                settings.mode === "dark"
+                  ? "bg-zinc-700 hover:bg-zinc-600"
+                  : "bg-zinc-100 hover:bg-zinc-200"
+              } ${selectedDb === x.label ? "border-zinc-400" : "border-transparent"}`}
+            >
+              <div className="font-semibold">{x.name}</div>
+              {x.image && (
+                <img
+                  src={x.image}
+                  className="h-10"
+                  style={{
+                    filter:
+                      "opacity(0.4) drop-shadow(0 0 0 white) drop-shadow(0 0 0 white)",
+                  }}
+                />
+              )}
+              <div className="text-xs">{x.description}</div>
+            </div>
+          ))}
+        </div>
+      </Modal>
     </div>
   );
 }

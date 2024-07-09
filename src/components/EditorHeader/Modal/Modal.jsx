@@ -5,21 +5,22 @@ import {
   Toast,
   Modal as SemiUIModal,
 } from "@douyinfe/semi-ui";
-import { MODAL, STATUS } from "../../../data/constants";
+import { DB, MODAL, STATUS } from "../../../data/constants";
 import { useState } from "react";
 import { db } from "../../../data/db";
 import {
   useAreas,
+  useEnums,
   useNotes,
   useSettings,
-  useTables,
+  useDiagram,
   useTransform,
   useTypes,
   useUndoRedo,
+  useTasks,
 } from "../../../hooks";
 import { saveAs } from "file-saver";
 import { Parser } from "node-sql-parser";
-import { astToDiagram } from "../../../utils/astToDiagram";
 import { getModalTitle, getOkText } from "../../../utils/modalTitles";
 import Rename from "./Rename";
 import Open from "./Open";
@@ -34,6 +35,8 @@ import { vscodeDark } from "@uiw/codemirror-theme-vscode";
 import { json } from "@codemirror/lang-json";
 import { githubLight } from "@uiw/codemirror-theme-github";
 import { useTranslation } from "react-i18next";
+import { importSQL } from "../../../utils/importSQL";
+import { databases } from "../../../data/databases";
 
 const languageExtension = {
   sql: [sql()],
@@ -50,19 +53,21 @@ export default function Modal({
   setDiagramId,
   exportData,
   setExportData,
+  importDb,
 }) {
   const { t } = useTranslation();
-  const { setTables, setRelationships } = useTables();
+  const { setTables, setRelationships, database, setDatabase } = useDiagram();
   const { setNotes } = useNotes();
   const { setAreas } = useAreas();
   const { setTypes } = useTypes();
   const { settings } = useSettings();
+  const { setEnums } = useEnums();
+  const { setTasks } = useTasks();
   const { setTransform } = useTransform();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const [importSource, setImportSource] = useState({
     src: "",
     overwrite: true,
-    dbms: "MySQL",
   });
   const [importData, setImportData] = useState(null);
   const [error, setError] = useState({
@@ -88,26 +93,39 @@ export default function Modal({
       .get(id)
       .then((diagram) => {
         if (diagram) {
+          if (diagram.database) {
+            setDatabase(diagram.database);
+          } else {
+            setDatabase(DB.GENERIC);
+          }
           setDiagramId(diagram.id);
           setTitle(diagram.name);
           setTables(diagram.tables);
-          setTypes(diagram.types);
           setRelationships(diagram.references);
           setAreas(diagram.areas);
           setNotes(diagram.notes);
+          setTasks(diagram.todos ?? []);
           setTransform({
             pan: diagram.pan,
             zoom: diagram.zoom,
           });
           setUndoStack([]);
           setRedoStack([]);
+          if (databases[database].hasTypes) {
+            setTypes(diagram.types ?? []);
+          }
+          if (databases[database].hasEnums) {
+            setEnums(diagram.enums ?? []);
+          }
           window.name = `d ${diagram.id}`;
         } else {
-          Toast.error("Oops! Something went wrong.");
+          window.name = "";
+          Toast.error(t("didnt_find_diagram"));
         }
       })
-      .catch(() => {
-        Toast.error("Oops! Couldn't load diagram.");
+      .catch((error) => {
+        console.log(error);
+        Toast.error(t("didnt_find_diagram"));
       });
   };
 
@@ -115,7 +133,9 @@ export default function Modal({
     const parser = new Parser();
     let ast = null;
     try {
-      ast = parser.astify(importSource.src, { database: "MySQL" });
+      ast = parser.astify(importSource.src, {
+        database: database === DB.GENERIC ? importDb : database,
+      });
     } catch (err) {
       setError({
         type: STATUS.ERROR,
@@ -131,14 +151,19 @@ export default function Modal({
       return;
     }
 
-    const d = astToDiagram(ast);
+    const d = importSQL(
+      ast,
+      database === DB.GENERIC ? importDb : database,
+      database,
+    );
     if (importSource.overwrite) {
       setTables(d.tables);
       setRelationships(d.relationships);
       setTransform((prev) => ({ ...prev, pan: { x: 0, y: 0 } }));
       setNotes([]);
       setAreas([]);
-      setTypes([]);
+      if (databases[database].hasTypes) setTypes(d.types ?? []);
+      if (databases[database].hasEnums) setEnums(d.enums ?? []);
       setUndoStack([]);
       setRedoStack([]);
     } else {
@@ -311,7 +336,6 @@ export default function Modal({
         setImportSource({
           src: "",
           overwrite: true,
-          dbms: "MySQL",
         });
       }}
       onCancel={() => {
@@ -332,7 +356,7 @@ export default function Modal({
           (modal === MODAL.IMPORT_SRC && importSource.src === ""),
       }}
       cancelText={t("cancel")}
-      width={modal === MODAL.NEW ? 740 : 600}
+      width={modal === MODAL.NEW || modal === MODAL.OPEN ? 740 : 600}
       bodyStyle={{ maxHeight: window.innerHeight - 280, overflow: "auto" }}
     >
       {getModalBody()}

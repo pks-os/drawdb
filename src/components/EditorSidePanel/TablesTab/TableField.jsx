@@ -1,16 +1,17 @@
-import { Action, ObjectType, sqlDataTypes } from "../../../data/constants";
+import { Action, ObjectType } from "../../../data/constants";
 import { Row, Col, Input, Button, Popover, Select } from "@douyinfe/semi-ui";
 import { IconMore, IconKeyStroked } from "@douyinfe/semi-icons";
-import { getSize, hasCheck, hasPrecision, isSized } from "../../../utils/toSQL";
-import { useTables, useTypes, useUndoRedo } from "../../../hooks";
+import { useEnums, useDiagram, useTypes, useUndoRedo } from "../../../hooks";
 import { useState } from "react";
 import FieldDetails from "./FieldDetails";
 import { useTranslation } from "react-i18next";
+import { dbToTypes } from "../../../data/datatypes";
 
 export default function TableField({ data, tid, index }) {
-  const { updateField } = useTables();
+  const { updateField } = useDiagram();
   const { types } = useTypes();
-  const { tables } = useTables();
+  const { enums } = useEnums();
+  const { tables, database } = useDiagram();
   const { t } = useTranslation();
   const { setUndoStack, setRedoStack } = useUndoRedo();
   const [editField, setEditField] = useState({});
@@ -51,11 +52,15 @@ export default function TableField({ data, tid, index }) {
         <Select
           className="w-full"
           optionList={[
-            ...sqlDataTypes.map((value) => ({
+            ...Object.keys(dbToTypes[database]).map((value) => ({
               label: value,
               value: value,
             })),
             ...types.map((type) => ({
+              label: type.name.toUpperCase(),
+              value: type.name.toUpperCase(),
+            })),
+            ...enums.map((type) => ({
               label: type.name.toUpperCase(),
               value: type.name.toUpperCase(),
             })),
@@ -84,8 +89,7 @@ export default function TableField({ data, tid, index }) {
             ]);
             setRedoStack([]);
             const incr =
-              data.increment &&
-              (value === "INT" || value === "BIGINT" || value === "SMALLINT");
+              data.increment && dbToTypes[database][value].canIncrement;
             if (value === "ENUM" || value === "SET") {
               updateField(tid, index, {
                 type: value,
@@ -93,19 +97,16 @@ export default function TableField({ data, tid, index }) {
                 values: data.values ? [...data.values] : [],
                 increment: incr,
               });
-            } else if (isSized(value) || hasPrecision(value)) {
+            } else if (
+              dbToTypes[database][value].isSized ||
+              dbToTypes[database][value].hasPrecision
+            ) {
               updateField(tid, index, {
                 type: value,
-                size: getSize(value),
+                size: dbToTypes[database][value].defaultSize,
                 increment: incr,
               });
-            } else if (
-              value === "BLOB" ||
-              value === "JSON" ||
-              value === "UUID" ||
-              value === "TEXT" ||
-              incr
-            ) {
+            } else if (!dbToTypes[database][value].hasDefault || incr) {
               updateField(tid, index, {
                 type: value,
                 increment: incr,
@@ -113,7 +114,7 @@ export default function TableField({ data, tid, index }) {
                 size: "",
                 values: [],
               });
-            } else if (hasCheck(value)) {
+            } else if (dbToTypes[database][value].hasCheck) {
               updateField(tid, index, {
                 type: value,
                 check: "",

@@ -1,31 +1,5 @@
 import i18n from "../i18n/i18n";
 
-export const sqlDataTypes = [
-  "INT",
-  "SMALLINT",
-  "BIGINT",
-  "DECIMAL",
-  "NUMERIC",
-  "FLOAT",
-  "DOUBLE",
-  "REAL",
-  "CHAR",
-  "VARCHAR",
-  "TEXT",
-  "DATE",
-  "TIME",
-  "TIMESTAMP",
-  "DATETIME",
-  "BOOLEAN",
-  "BINARY",
-  "VARBINARY",
-  "BLOB",
-  "JSON",
-  "UUID",
-  "ENUM",
-  "SET",
-];
-
 export const tableThemes = [
   "#f03c3c",
   "#ff4f81",
@@ -76,6 +50,7 @@ export const Tab = {
   AREAS: "3",
   NOTES: "4",
   TYPES: "5",
+  ENUMS: "6",
 };
 
 export const ObjectType = {
@@ -85,6 +60,7 @@ export const ObjectType = {
   NOTE: 3,
   RELATIONSHIP: 4,
   TYPE: 5,
+  ENUM: 6,
 };
 
 export const Action = {
@@ -128,4 +104,13 @@ export const SIDESHEET = {
   NONE: 0,
   TODO: 1,
   TIMELINE: 2,
+};
+
+export const DB = {
+  MYSQL: "mysql",
+  POSTGRES: "postgresql",
+  MSSQL: "transactsql",
+  SQLITE: "sqlite",
+  MARIADB: "mariadb",
+  GENERIC: "generic",
 };

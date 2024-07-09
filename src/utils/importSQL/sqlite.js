@@ -1,47 +1,42 @@
-import {
-  Cardinality,
-  tableColorStripHeight,
-  tableFieldHeight,
-  tableHeaderHeight,
-} from "../data/constants";
+import { Cardinality, DB } from "../../data/constants";
+import { dbToTypes } from "../../data/datatypes";
+import { buildSQLFromAST } from "./shared";
 
-function buildSQLFromAST(ast) {
-  if (ast.type === "binary_expr") {
-    const leftSQL = buildSQLFromAST(ast.left);
-    const rightSQL = buildSQLFromAST(ast.right);
-    return `${leftSQL} ${ast.operator} ${rightSQL}`;
-  }
+const affinity = {
+  [DB.SQLITE]: new Proxy(
+    {
+      INT: "INTEGER",
+      TINYINT: "INTEGER",
+      SMALLINT: "INTEGER",
+      MEDIUMINT: "INTEGER",
+      BIGINT: "INTEGER",
+      "UNSIGNED BIG INT": "INTEGER",
+      INT2: "INTEGER",
+      INT8: "INTEGER",
+      CHARACTER: "TEXT",
+      NCHARACTER: "TEXT",
+      NVARCHAR: "VARCHAR",
+      DOUBLE: "REAL",
+      FLOAT: "REAL",
+    },
+    { get: (target, prop) => (prop in target ? target[prop] : "BLOB") },
+  ),
+  [DB.GENERIC]: new Proxy(
+    {
+      INT: "INTEGER",
+      TINYINT: "SMALLINT",
+      MEDIUMINT: "INTEGER",
+      INT2: "INTEGER",
+      INT8: "INTEGER",
+      CHARACTER: "TEXT",
+      NCHARACTER: "TEXT",
+      NVARCHAR: "VARCHAR",
+    },
+    { get: (target, prop) => (prop in target ? target[prop] : "BLOB") },
+  ),
+};
 
-  if (ast.type === "function") {
-    let expr = "";
-    expr = ast.name;
-    if (ast.args) {
-      expr +=
-        "(" +
-        ast.args.value
-          .map((v) => {
-            if (v.type === "column_ref") return "`" + v.column + "`";
-            if (
-              v.type === "single_quote_string" ||
-              v.type === "double_quote_string"
-            )
-              return "'" + v.value + "'";
-            return v.value;
-          })
-          .join(", ") +
-        ")";
-    }
-    return expr;
-  } else if (ast.type === "column_ref") {
-    return "`" + ast.column + "`";
-  } else if (ast.type === "expr_list") {
-    return ast.value.map((v) => v.value).join(" AND ");
-  } else {
-    return typeof ast.value === "string" ? "'" + ast.value + "'" : ast.value;
-  }
-}
-
-export function astToDiagram(ast) {
+export function fromSQLite(ast, diagramDb = DB.GENERIC) {
   const tables = [];
   const relationships = [];
 
@@ -59,7 +54,13 @@ export function astToDiagram(ast) {
           if (d.resource === "column") {
             const field = {};
             field.name = d.column.column;
-            field.type = d.definition.dataType;
+
+            let type = d.definition.dataType;
+            if (!dbToTypes[diagramDb][type]) {
+              type = affinity[diagramDb][type];
+            }
+            field.type = type;
+
             if (d.definition.expr && d.definition.expr.type === "expr_list") {
               field.values = d.definition.expr.value.map((v) => v.value);
             }
@@ -108,7 +109,7 @@ export function astToDiagram(ast) {
             }
             field.check = "";
             if (d.check) {
-              field.check = buildSQLFromAST(d.check.definition[0]);
+              field.check = buildSQLFromAST(d.check.definition[0], DB.SQLITE);
             }
 
             table.fields.push(field);
@@ -193,90 +194,10 @@ export function astToDiagram(ast) {
 
         if (found !== -1) tables[found].indices.forEach((i, j) => (i.id = j));
       }
-    } else if (e.type === "alter") {
-      e.expr.forEach((expr) => {
-        if (
-          expr.action === "add" &&
-          expr.create_definitions.constraint_type === "FOREIGN KEY"
-        ) {
-          const relationship = {};
-          const startTable = e.table[0].table;
-          const startField = expr.create_definitions.definition[0].column;
-          const endTable =
-            expr.create_definitions.reference_definition.table[0].table;
-          const endField =
-            expr.create_definitions.reference_definition.definition[0].column;
-          let updateConstraint = "No action";
-          let deleteConstraint = "No action";
-          expr.create_definitions.reference_definition.on_action.forEach(
-            (c) => {
-              if (c.type === "on update") {
-                updateConstraint = c.value.value;
-                updateConstraint =
-                  updateConstraint[0].toUpperCase() +
-                  updateConstraint.substring(1);
-              } else if (c.type === "on delete") {
-                deleteConstraint = c.value.value;
-                deleteConstraint =
-                  deleteConstraint[0].toUpperCase() +
-                  deleteConstraint.substring(1);
-              }
-            },
-          );
-
-          const startTableId = tables.findIndex((t) => t.name === startTable);
-          if (startTable === -1) return;
-
-          const endTableId = tables.findIndex((t) => t.name === endTable);
-          if (endTableId === -1) return;
-
-          const endFieldId = tables[endTableId].fields.findIndex(
-            (f) => f.name === endField,
-          );
-          if (endField === -1) return;
-
-          const startFieldId = tables[startTableId].fields.findIndex(
-            (f) => f.name === startField,
-          );
-          if (startFieldId === -1) return;
-
-          relationship.name = startTable + "_" + startField + "_fk";
-          relationship.startTableId = startTableId;
-          relationship.startFieldId = startFieldId;
-          relationship.endTableId = endTableId;
-          relationship.endFieldId = endFieldId;
-          relationship.updateConstraint = updateConstraint;
-          relationship.deleteConstraint = deleteConstraint;
-          relationship.cardinality = Cardinality.ONE_TO_ONE;
-          relationships.push(relationship);
-
-          relationships.forEach((r, i) => (r.id = i));
-        }
-      });
     }
   });
 
   relationships.forEach((r, i) => (r.id = i));
-
-  let maxHeight = -1;
-  const tableWidth = 200;
-  const gapX = 54;
-  const gapY = 40;
-  tables.forEach((table, i) => {
-    if (i < tables.length / 2) {
-      table.x = i * tableWidth + (i + 1) * gapX;
-      table.y = gapY;
-      const height =
-        table.fields.length * tableFieldHeight +
-        tableHeaderHeight +
-        tableColorStripHeight;
-      maxHeight = Math.max(height, maxHeight);
-    } else {
-      const index = tables.length - i - 1;
-      table.x = index * tableWidth + (index + 1) * gapX;
-      table.y = maxHeight + 2 * gapY;
-    }
-  });
 
   return { tables, relationships };
 }

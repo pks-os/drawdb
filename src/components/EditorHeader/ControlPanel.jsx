@@ -29,7 +29,7 @@ import {
   jsonToSQLite,
   jsonToMariaDB,
   jsonToSQLServer,
-} from "../../utils/toSQL";
+} from "../../utils/exportSQL/generic";
 import {
   ObjectType,
   Action,
@@ -37,6 +37,7 @@ import {
   State,
   MODAL,
   SIDESHEET,
+  DB,
 } from "../../data/constants";
 import jsPDF from "jspdf";
 import { useHotkeys } from "react-hotkeys-hook";
@@ -47,21 +48,24 @@ import {
   useLayout,
   useSettings,
   useTransform,
-  useTables,
+  useDiagram,
   useUndoRedo,
   useSelect,
+  useSaveState,
+  useTypes,
+  useNotes,
+  useAreas,
+  useEnums,
 } from "../../hooks";
 import { enterFullscreen } from "../../utils/fullscreen";
 import { dataURItoBlob } from "../../utils/utils";
-import useAreas from "../../hooks/useAreas";
-import useNotes from "../../hooks/useNotes";
-import useTypes from "../../hooks/useTypes";
-import useSaveState from "../../hooks/useSaveState";
 import { IconAddArea, IconAddNote, IconAddTable } from "../../icons";
 import LayoutDropdown from "./LayoutDropdown";
 import Sidesheet from "./SideSheet/Sidesheet";
 import Modal from "./Modal/Modal";
 import { useTranslation } from "react-i18next";
+import { exportSQL } from "../../utils/exportSQL";
+import { databases } from "../../data/databases";
 
 export default function ControlPanel({
   diagramId,
@@ -74,6 +78,7 @@ export default function ControlPanel({
   const [sidesheet, setSidesheet] = useState(SIDESHEET.NONE);
   const [prevTitle, setPrevTitle] = useState(title);
   const [showEditName, setShowEditName] = useState(false);
+  const [importDb, setImportDb] = useState("");
   const [exportData, setExportData] = useState({
     data: null,
     filename: `${title}_${new Date().toISOString()}`,
@@ -94,7 +99,9 @@ export default function ControlPanel({
     setRelationships,
     addRelationship,
     deleteRelationship,
-  } = useTables();
+    database,
+  } = useDiagram();
+  const { enums, setEnums, deleteEnum, addEnum, updateEnum } = useEnums();
   const { types, addType, deleteType, updateType, setTypes } = useTypes();
   const { notes, setNotes, updateNote, addNote, deleteNote } = useNotes();
   const { areas, setAreas, updateArea, addArea, deleteArea } = useAreas();
@@ -110,7 +117,7 @@ export default function ControlPanel({
   const undo = () => {
     if (undoStack.length === 0) return;
     const a = undoStack[undoStack.length - 1];
-    setUndoStack((prev) => prev.filter((e, i) => i !== prev.length - 1));
+    setUndoStack((prev) => prev.filter((_, i) => i !== prev.length - 1));
     if (a.action === Action.ADD) {
       if (a.element === ObjectType.TABLE) {
         deleteTable(tables[tables.length - 1].id, false);
@@ -122,6 +129,8 @@ export default function ControlPanel({
         deleteRelationship(a.data.id, false);
       } else if (a.element === ObjectType.TYPE) {
         deleteType(types.length - 1, false);
+      } else if (a.element === ObjectType.ENUM) {
+        deleteEnum(enums.length - 1, false);
       }
       setRedoStack((prev) => [...prev, a]);
     } else if (a.action === Action.MOVE) {
@@ -156,6 +165,8 @@ export default function ControlPanel({
         addArea(a.data, false);
       } else if (a.element === ObjectType.TYPE) {
         addType({ id: a.id, ...a.data }, false);
+      } else if (a.element === ObjectType.ENUM) {
+        addEnum({ id: a.id, ...a.data }, false);
       }
       setRedoStack((prev) => [...prev, a]);
     } else if (a.action === Action.EDIT) {
@@ -264,7 +275,7 @@ export default function ControlPanel({
         if (a.component === "field_add") {
           updateType(a.tid, {
             fields: types[a.tid].fields.filter(
-              (e, i) => i !== types[a.tid].fields.length - 1,
+              (_, i) => i !== types[a.tid].fields.length - 1,
             ),
           });
         }
@@ -288,6 +299,8 @@ export default function ControlPanel({
         } else if (a.component === "self") {
           updateType(a.tid, a.undo);
         }
+      } else if (a.element === ObjectType.ENUM) {
+        updateEnum(a.id, a.undo);
       }
       setRedoStack((prev) => [...prev, a]);
     } else if (a.action === Action.PAN) {
@@ -314,6 +327,8 @@ export default function ControlPanel({
         addRelationship(a.data, false);
       } else if (a.element === ObjectType.TYPE) {
         addType(null, false);
+      } else if (a.element === ObjectType.ENUM) {
+        addEnum(null, false);
       }
       setUndoStack((prev) => [...prev, a]);
     } else if (a.action === Action.MOVE) {
@@ -347,6 +362,8 @@ export default function ControlPanel({
         deleteArea(a.data.id, false);
       } else if (a.element === ObjectType.TYPE) {
         deleteType(a.id, false);
+      } else if (a.element === ObjectType.ENUM) {
+        deleteEnum(a.id, false);
       }
       setUndoStack((prev) => [...prev, a]);
     } else if (a.action === Action.EDIT) {
@@ -444,6 +461,8 @@ export default function ControlPanel({
         } else if (a.component === "self") {
           updateType(a.tid, a.redo);
         }
+      } else if (a.element === ObjectType.ENUM) {
+        updateEnum(a.id, a.redo);
       }
       setUndoStack((prev) => [...prev, a]);
     } else if (a.action === Action.PAN) {
@@ -693,11 +712,13 @@ export default function ControlPanel({
             .add({
               title: title,
               tables: tables,
+              database: database,
               relationships: relationships,
-              types: types,
               notes: notes,
               subjectAreas: areas,
               custom: 1,
+              ...(databases[database].hasEnums && { enums: enums }),
+              ...(databases[database].hasTypes && { types: types }),
             })
             .then(() => {
               Toast.success(t("template_saved"));
@@ -726,6 +747,7 @@ export default function ControlPanel({
               setAreas([]);
               setNotes([]);
               setTypes([]);
+              setEnums([]);
               setUndoStack([]);
               setRedoStack([]);
             })
@@ -737,7 +759,147 @@ export default function ControlPanel({
         shortcut: "Ctrl+I",
       },
       import_from_source: {
-        function: () => setModal(MODAL.IMPORT_SRC),
+        ...(database === DB.GENERIC && {
+          children: [
+            {
+              MySQL: () => {
+                setModal(MODAL.IMPORT_SRC);
+                setImportDb(DB.MYSQL);
+              },
+            },
+            {
+              PostgreSQL: () => {
+                setModal(MODAL.IMPORT_SRC);
+                setImportDb(DB.POSTGRES);
+              },
+            },
+            {
+              SQLite: () => {
+                setModal(MODAL.IMPORT_SRC);
+                setImportDb(DB.SQLITE);
+              },
+            },
+            {
+              MariaDB: () => {
+                setModal(MODAL.IMPORT_SRC);
+                setImportDb(DB.MARIADB);
+              },
+            },
+            {
+              MSSQL: () => {
+                setModal(MODAL.IMPORT_SRC);
+                setImportDb(DB.MSSQL);
+              },
+            },
+          ],
+        }),
+        function: () => {
+          if (database === DB.GENERIC) return;
+
+          setModal(MODAL.IMPORT_SRC);
+        },
+      },
+      export_source: {
+        ...(database === DB.GENERIC && {
+          children: [
+            {
+              MySQL: () => {
+                setModal(MODAL.CODE);
+                const src = jsonToMySQL({
+                  tables: tables,
+                  references: relationships,
+                  types: types,
+                  database: database,
+                });
+                setExportData((prev) => ({
+                  ...prev,
+                  data: src,
+                  extension: "sql",
+                }));
+              },
+            },
+            {
+              PostgreSQL: () => {
+                setModal(MODAL.CODE);
+                const src = jsonToPostgreSQL({
+                  tables: tables,
+                  references: relationships,
+                  types: types,
+                  database: database,
+                });
+                setExportData((prev) => ({
+                  ...prev,
+                  data: src,
+                  extension: "sql",
+                }));
+              },
+            },
+            {
+              SQLite: () => {
+                setModal(MODAL.CODE);
+                const src = jsonToSQLite({
+                  tables: tables,
+                  references: relationships,
+                  types: types,
+                  database: database,
+                });
+                setExportData((prev) => ({
+                  ...prev,
+                  data: src,
+                  extension: "sql",
+                }));
+              },
+            },
+            {
+              MariaDB: () => {
+                setModal(MODAL.CODE);
+                const src = jsonToMariaDB({
+                  tables: tables,
+                  references: relationships,
+                  types: types,
+                  database: database,
+                });
+                setExportData((prev) => ({
+                  ...prev,
+                  data: src,
+                  extension: "sql",
+                }));
+              },
+            },
+            {
+              MSSQL: () => {
+                setModal(MODAL.CODE);
+                const src = jsonToSQLServer({
+                  tables: tables,
+                  references: relationships,
+                  types: types,
+                  database: database,
+                });
+                setExportData((prev) => ({
+                  ...prev,
+                  data: src,
+                  extension: "sql",
+                }));
+              },
+            },
+          ],
+        }),
+        function: () => {
+          if (database === DB.GENERIC) return;
+          setModal(MODAL.CODE);
+          const src = exportSQL({
+            tables: tables,
+            references: relationships,
+            types: types,
+            database: database,
+            enums: enums,
+          });
+          setExportData((prev) => ({
+            ...prev,
+            data: src,
+            extension: "sql",
+          }));
+        },
       },
       export_as: {
         children: [
@@ -776,7 +938,9 @@ export default function ControlPanel({
                   relationships: relationships,
                   notes: notes,
                   subjectAreas: areas,
-                  types: types,
+                  database: database,
+                  ...(databases[database].hasTypes && { types: types }),
+                  ...(databases[database].hasEnums && { enums: enums }),
                   title: title,
                 },
                 null,
@@ -835,7 +999,9 @@ export default function ControlPanel({
                   relationships: relationships,
                   notes: notes,
                   subjectAreas: areas,
-                  types: types,
+                  database: database,
+                  ...(databases[database].hasTypes && { types: types }),
+                  ...(databases[database].hasEnums && { enums: enums }),
                 },
                 null,
                 2,
@@ -844,86 +1010,6 @@ export default function ControlPanel({
                 type: "text/plain;charset=utf-8",
               });
               saveAs(blob, `${exportData.filename}.ddb`);
-            },
-          },
-        ],
-        function: () => {},
-      },
-      export_source: {
-        children: [
-          {
-            MySQL: () => {
-              setModal(MODAL.CODE);
-              const src = jsonToMySQL({
-                tables: tables,
-                references: relationships,
-                types: types,
-              });
-              setExportData((prev) => ({
-                ...prev,
-                data: src,
-                extension: "sql",
-              }));
-            },
-          },
-          {
-            PostgreSQL: () => {
-              setModal(MODAL.CODE);
-              const src = jsonToPostgreSQL({
-                tables: tables,
-                references: relationships,
-                types: types,
-              });
-              setExportData((prev) => ({
-                ...prev,
-                data: src,
-                extension: "sql",
-              }));
-            },
-          },
-          {
-            SQLite: () => {
-              setModal(MODAL.CODE);
-              const src = jsonToSQLite({
-                tables: tables,
-                references: relationships,
-                types: types,
-              });
-              setExportData((prev) => ({
-                ...prev,
-                data: src,
-                extension: "sql",
-              }));
-            },
-          },
-          {
-            MariaDB: () => {
-              setModal(MODAL.CODE);
-              const src = jsonToMariaDB({
-                tables: tables,
-                references: relationships,
-                types: types,
-              });
-              setExportData((prev) => ({
-                ...prev,
-                data: src,
-                extension: "sql",
-              }));
-            },
-          },
-          {
-            MSSQL: () => {
-              setModal(MODAL.CODE);
-              const src = jsonToSQLServer({
-                tables: tables,
-                references: relationships,
-                types: types,
-              });
-              setExportData((prev) => ({
-                ...prev,
-                data: src,
-                extension: "sql",
-              }));
             },
           },
         ],
@@ -955,6 +1041,8 @@ export default function ControlPanel({
           setRelationships([]);
           setAreas([]);
           setNotes([]);
+          setEnums([]);
+          setTypes([]);
           setUndoStack([]);
           setRedoStack([]);
         },
@@ -1213,6 +1301,7 @@ export default function ControlPanel({
         setDiagramId={setDiagramId}
         setModal={setModal}
         prevTitle={prevTitle}
+        importDb={importDb}
       />
       <Sidesheet
         type={sidesheet}
@@ -1422,9 +1511,21 @@ export default function ControlPanel({
             />
           </Link>
           <div className="ms-1 mt-1">
-            <div className="flex items-center">
+            <div className="flex items-center ms-3 gap-2">
+              {databases[database].image && (
+                <img
+                  src={databases[database].image}
+                  className="h-5"
+                  style={{
+                    filter:
+                      "opacity(0.4) drop-shadow(0 0 0 white) drop-shadow(0 0 0 white)",
+                  }}
+                  alt={databases[database].name + " icon"}
+                  title={databases[database].name + " diagram"}
+                />
+              )}
               <div
-                className="text-xl ms-3 me-1"
+                className="text-xl  me-1"
                 onMouseEnter={() => setShowEditName(true)}
                 onMouseLeave={() => setShowEditName(false)}
                 onClick={() => setModal(MODAL.RENAME)}

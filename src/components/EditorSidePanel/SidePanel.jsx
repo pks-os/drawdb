@@ -1,6 +1,6 @@
 import { Tabs, TabPane } from "@douyinfe/semi-ui";
 import { Tab } from "../../data/constants";
-import { useLayout, useSelect } from "../../hooks";
+import { useLayout, useSelect, useDiagram } from "../../hooks";
 import RelationshipsTab from "./RelationshipsTab/RelationshipsTab";
 import TypesTab from "./TypesTab/TypesTab";
 import Issues from "./Issues";
@@ -8,23 +8,46 @@ import AreasTab from "./AreasTab/AreasTab";
 import NotesTab from "./NotesTab/NotesTab";
 import TablesTab from "./TablesTab/TablesTab";
 import { useTranslation } from "react-i18next";
+import { useMemo } from "react";
+import { databases } from "../../data/databases";
+import EnumsTab from "./EnumsTab/EnumsTab";
 
 export default function SidePanel({ width, resize, setResize }) {
   const { layout } = useLayout();
   const { selectedElement, setSelectedElement } = useSelect();
+  const { database } = useDiagram();
   const { t } = useTranslation();
 
-  const tabList = [
-    { tab: t("tables"), itemKey: Tab.TABLES, component: <TablesTab /> },
-    {
-      tab: t("relationships"),
-      itemKey: Tab.RELATIONSHIPS,
-      component: <RelationshipsTab />,
-    },
-    { tab: t("subject_areas"), itemKey: Tab.AREAS, component: <AreasTab /> },
-    { tab: t("notes"), itemKey: Tab.NOTES, component: <NotesTab /> },
-    { tab: t("types"), itemKey: Tab.TYPES, component: <TypesTab /> },
-  ];
+  const tabList = useMemo(() => {
+    const tabs = [
+      { tab: t("tables"), itemKey: Tab.TABLES, component: <TablesTab /> },
+      {
+        tab: t("relationships"),
+        itemKey: Tab.RELATIONSHIPS,
+        component: <RelationshipsTab />,
+      },
+      { tab: t("subject_areas"), itemKey: Tab.AREAS, component: <AreasTab /> },
+      { tab: t("notes"), itemKey: Tab.NOTES, component: <NotesTab /> },
+    ];
+
+    if (databases[database].hasTypes) {
+      tabs.push({
+        tab: t("types"),
+        itemKey: Tab.TYPES,
+        component: <TypesTab />,
+      });
+    }
+
+    if (databases[database].hasEnums) {
+      tabs.push({
+        tab: t("enums"),
+        itemKey: Tab.ENUMS,
+        component: <EnumsTab />,
+      });
+    }
+
+    return tabs;
+  }, [t, database]);
 
   return (
     <div className="flex h-full">

@@ -108,6 +108,17 @@ export const typeSchema = {
   required: ["name", "fields", "comment"],
 };
 
+export const enumSchema = {
+  type: "object",
+  properties: {
+    name: { type: "string" },
+    values: {
+      type: "array",
+      items: { type: "string" },
+    },
+  },
+};
+
 export const jsonSchema = {
   type: "object",
   properties: {
@@ -151,7 +162,16 @@ export const jsonSchema = {
       type: "array",
       items: { ...areaSchema },
     },
+    types: {
+      type: "array",
+      items: { ...typeSchema },
+    },
+    enums: {
+      type: "array",
+      items: { ...enumSchema },
+    },
     title: { type: "string" },
+    database: { type: "string" },
   },
   required: ["tables", "relationships", "notes", "subjectAreas"],
 };
