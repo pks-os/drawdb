@@ -21,7 +21,11 @@ import {
 } from "../../../hooks";
 import { saveAs } from "file-saver";
 import { Parser } from "node-sql-parser";
-import { getModalTitle, getOkText } from "../../../utils/modalTitles";
+import {
+  getModalTitle,
+  getModalWidth,
+  getOkText,
+} from "../../../utils/modalData";
 import Rename from "./Rename";
 import Open from "./Open";
 import New from "./New";
@@ -37,6 +41,7 @@ import { githubLight } from "@uiw/codemirror-theme-github";
 import { useTranslation } from "react-i18next";
 import { importSQL } from "../../../utils/importSQL";
 import { databases } from "../../../data/databases";
+import { isRtl } from "../../../i18n/utils/rtl";
 
 const languageExtension = {
   sql: [sql()],
@@ -53,7 +58,7 @@ export default function Modal({
   setExportData,
   importDb,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { setTables, setRelationships, database, setDatabase } = useDiagram();
   const { setNotes } = useNotes();
   const { setAreas } = useAreas();
@@ -166,8 +171,12 @@ export default function Modal({
       setUndoStack([]);
       setRedoStack([]);
     } else {
-      setTables((prev) => [...prev, ...d.tables]);
-      setRelationships((prev) => [...prev, ...d.relationships]);
+      setTables((prev) =>
+        [...prev, ...d.tables].map((t, i) => ({ ...t, id: i })),
+      );
+      setRelationships((prev) =>
+        [...prev, ...d.relationships].map((r, i) => ({ ...r, id: i })),
+      );
     }
     setModal(MODAL.NONE);
   };
@@ -320,6 +329,7 @@ export default function Modal({
 
   return (
     <SemiUIModal
+      style={isRtl(i18n.language) ? { direction: "rtl" } : {}}
       title={getModalTitle(modal)}
       visible={modal !== MODAL.NONE}
       onOk={getModalOnOk}
@@ -357,8 +367,12 @@ export default function Modal({
           (modal === MODAL.IMPORT_SRC && importSource.src === ""),
       }}
       cancelText={t("cancel")}
-      width={modal === MODAL.NEW || modal === MODAL.OPEN ? 740 : 600}
-      bodyStyle={{ maxHeight: window.innerHeight - 280, overflow: "auto" }}
+      width={getModalWidth(modal)}
+      bodyStyle={{
+        maxHeight: window.innerHeight - 280,
+        overflow: "auto",
+        direction: "ltr",
+      }}
     >
       {getModalBody()}
     </SemiUIModal>
